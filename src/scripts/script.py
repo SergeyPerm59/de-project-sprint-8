@@ -70,7 +70,7 @@ subscribers_restaurant_df = spark.read \
 
 
 def foreach_batch_function(df, epoch_id):
-    df.withColumn("feedback", f.lit(None).cast(StringType())) \
+    df.withColumn("feedback", f.lit(None).cast(StringType())).drop('id') \
        .write.format("jdbc") \
        .mode('append') \
        .option('url', 'jdbc:postgresql://localhost:5432/de') \
@@ -109,11 +109,13 @@ def foreach_batch_function(df, epoch_id):
 subscribers_restaurant_df.show()
 
 result_join = filtered_read_stream_df.alias('f').join(subscribers_restaurant_df.alias('g'), 'restaurant_id')\
-    .withColumn("trigger_datetime_created", lit(int(round(datetime.utcnow().timestamp()))))
+    .withColumn("trigger_datetime_created", lit(int(round(datetime.utcnow().timestamp()))))\
+    .dropDuplicates(['client_id', 'restaurant_id'])\
+    .withWatermark('timestamp', '1 minutes')
 
 result_join.printSchema()
 
-result_join.writeStream \
+result_join.write \
     .outputMode("append") \
     .trigger(processingTime="60 seconds") \
     .foreachBatch(foreach_batch_function) \

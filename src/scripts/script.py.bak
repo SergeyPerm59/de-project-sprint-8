@@ -59,12 +59,6 @@ filtered_read_stream_df = restaurant_read_stream_df\
 .select("deserialized_value.*")\
 .filter((col("adv_campaign_datetime_start") <= current_timestamp_utc) & (col("adv_campaign_datetime_end") >= current_timestamp_utc))
 
-#filtered_read_stream_df.writeStream \
-#      .format("console")\
-#      .outputMode("append")\
-#      .start()\
-#      .awaitTermination()
-
 subscribers_restaurant_df = spark.read \
                     .format('jdbc') \
                     .option('url', 'jdbc:postgresql://rc1a-fswjkpli01zafgjm.mdb.yandexcloud.net:6432/de') \
@@ -115,11 +109,13 @@ def foreach_batch_function(df, epoch_id):
 subscribers_restaurant_df.show()
 
 result_join = filtered_read_stream_df.alias('f').join(subscribers_restaurant_df.alias('g'), 'restaurant_id')\
-    .withColumn("trigger_datetime_created", lit(int(round(datetime.utcnow().timestamp()))))
+    .withColumn("trigger_datetime_created", lit(int(round(datetime.utcnow().timestamp()))))\
+    .dropDuplicates(['client_id', 'restaurant_id'])\
+    .withWatermark('timestamp', '1 minutes')
 
 result_join.printSchema()
 
-result_join.writeStream \
+result_join.write \
     .outputMode("append") \
     .trigger(processingTime="60 seconds") \
     .foreachBatch(foreach_batch_function) \
